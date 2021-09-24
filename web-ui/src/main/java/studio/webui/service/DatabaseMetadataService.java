@@ -40,7 +40,7 @@ public class DatabaseMetadataService {
             }
         }
     }
-
+ 
     public Optional<DatabasePackMetadata> getPackMetadata(String uuid) {
         try {
             LOGGER.debug("Fetching metadata from official database for pack: " + uuid);
@@ -50,7 +50,9 @@ public class DatabaseMetadataService {
             Optional<String> maybePackKey = officialRoot.keySet().stream()
                     .filter(key -> officialRoot.getAsJsonObject(key).get("uuid").getAsString().equalsIgnoreCase(uuid))
                     .findFirst();
-            if (maybePackKey.isPresent()) {
+            //if (maybePackKey.isPresent()) {
+            // bypass the official check database
+            if (false) {
                 com.google.gson.JsonObject packMetadata = officialRoot.getAsJsonObject(maybePackKey.get());
                 // FIXME Handle multiple locales
                 JsonObject localesAvailable = packMetadata.getAsJsonObject("locales_available");

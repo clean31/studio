@@ -198,7 +198,9 @@ class PackLibrary extends React.Component {
     };
 
     isPackDraggable = (pack) => {
-        return !pack.official;
+        // return !pack.official;
+        // fix official packs not draggable
+        return !0;
     };
 
     render() {
