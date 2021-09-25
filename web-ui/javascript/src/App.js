@@ -86,7 +86,8 @@ class App extends React.Component {
             this.props.loadLibrary();
 
             // Load evergeen infos on startup
-            this.props.loadEvergreen(this.props.settings.announceOptOut);
+            // Disable evergreen infos
+            //this.props.loadEvergreen(this.props.settings.announceOptOut);
 
             // Load sample diagram in editor
             let model = simplifiedSample();
@@ -130,7 +131,8 @@ class App extends React.Component {
     };
 
     announceOptOut = () => {
-        this.props.setAnnounceOptOut(true);
+        // disable announce
+        this.props.setAnnounceOptOut(false);
         this.dismissAnnounceDialog();
     };
 

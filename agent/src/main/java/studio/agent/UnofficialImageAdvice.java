@@ -15,7 +15,9 @@ public class UnofficialImageAdvice {
 
     @Advice.OnMethodExit
     public static void getImageUrl(@Advice.Return(readOnly = false) String retval) {
-        if (retval.startsWith("https://storage.googleapis.com/lunii-data-prod/studio/")) {
+        // if (retval.startsWith("https://storage.googleapis.com/lunii-data-prod/studio/")) {
+        // gto
+        if (false) {
             final Logger logger = Logger.getLogger("studio-agent");
             String path = "http:/" + retval.substring(retval.indexOf("/studio/"));
             logger.info("Replacing image url to trigger cache match (" + path + " -> " + UUID.nameUUIDFromBytes(path.getBytes()).toString() + ")");
