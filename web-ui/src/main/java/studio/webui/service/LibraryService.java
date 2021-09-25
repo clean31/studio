@@ -88,36 +88,26 @@ public class LibraryService {
             return new JsonArray();
         } else {
             // First, refresh unofficial database with metadata from archive packs
-            try (Stream<Path> paths = Files.walk(Paths.get(libraryPath()), 1)) {
-                paths
-                        .filter(Files::isRegularFile)
-                        .filter(path -> path.toString().endsWith(".zip"))
-                        .map(this::readPackFile)
-                        .filter(Optional::isPresent)
-                        .map(Optional::get)
-                        // Group packs by UUID
-                        .collect(Collectors.groupingBy(p -> p.getMetadata().getUuid()))
-                        .entrySet()
-                        .forEach(entry -> {
-                            List<LibraryPack> packs = entry.getValue();
-                            packs.sort((a, b) -> Long.compare(b.getTimestamp(), a.getTimestamp()));
-                            LOGGER.debug("Refreshing metadata for pack `" + entry.getKey() + "` from file `" + packs.get(0).getPath() + "`");
-                            this.readPackFile(packs.get(0).getPath()).ifPresent(
-                                    meta -> databaseMetadataService.refreshUnofficialMetadata(
-                                            new DatabasePackMetadata(
-                                                    meta.getMetadata().getUuid(),
-                                                    meta.getMetadata().getTitle(),
-                                                    meta.getMetadata().getDescription(),
-                                                    Optional.ofNullable(meta.getMetadata().getThumbnail()).map(thumb -> "data:image/png;base64," + Base64.getEncoder().encodeToString(thumb)).orElse(null),
-                                                    false
-                                            )
-                                    )
-                            );
-                        });
-            } catch (IOException e) {
-                LOGGER.error("Failed to read packs from local library", e);
-                throw new RuntimeException(e);
-            }
+            // gto
+//            try (Stream<Path> paths = Files.walk(Paths.get(libraryPath()))) {
+//                paths
+//                        .filter(Files::isRegularFile)
+//                        .filter(path -> path.toString().endsWith(".zip"))
+//                        .forEach(path -> this.readPackFile(path).ifPresent(
+//                                meta -> databaseMetadataService.refreshUnofficialMetadata(
+//                                        new DatabasePackMetadata(
+//                                                meta.getUuid(),
+//                                                meta.getTitle(),
+//                                                meta.getDescription(),
+//                                                Optional.ofNullable(meta.getThumbnail()).map(thumb -> "data:image/png;base64," + Base64.getEncoder().encodeToString(thumb)).orElse(null),
+//                                                false
+//                                        )
+//                                )
+//                        ));
+//            } catch (IOException e) {
+//                LOGGER.error("Failed to read packs from local library", e);
+//                throw new RuntimeException(e);
+//            }
 
             // List pack files in library folder
             try (Stream<Path> paths = Files.walk(Paths.get(libraryPath()), 1)) {
