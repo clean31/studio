@@ -54,7 +54,6 @@ public class MockStoryTellerService implements IStoryTellerService {
                 Files.createDirectories(Paths.get(devicePath()));
             } catch (IOException e) {
                 LOGGER.error("Failed to initialize mocked device", e);
-                e.printStackTrace();
                 throw new IllegalStateException("Failed to initialize mocked device");
             }
         }
@@ -124,7 +123,6 @@ public class MockStoryTellerService implements IStoryTellerService {
                 return metadata;
             } catch (IOException e) {
                 LOGGER.error("Failed to read binary-format pack " + path.toString() + " from mocked device", e);
-                e.printStackTrace();
                 return Optional.empty();
             }
         } else if (path.toString().endsWith(".zip")) {
@@ -136,11 +134,11 @@ public class MockStoryTellerService implements IStoryTellerService {
         return Optional.empty();
     }
 
-    public Optional<String> addPack(String uuid, File packFile) {
+    public CompletableFuture<Optional<String>> addPack(String uuid, File packFile) {
         // Check that mocked device folder exists
         File deviceFolder = new File(devicePath());
         if (!deviceFolder.exists() || !deviceFolder.isDirectory()) {
-            return Optional.empty();
+            return CompletableFuture.completedFuture(Optional.empty());
         } else {
             String transferId = UUID.randomUUID().toString();
             // Perform transfer asynchronously, and send events on eventbus to monitor progress and end of transfer
@@ -175,13 +173,12 @@ public class MockStoryTellerService implements IStoryTellerService {
                         eventBus.send("storyteller.transfer."+transferId+".done", new JsonObject().put("success", true));
                     } catch (IOException e) {
                         LOGGER.error("Failed to add pack to mocked device", e);
-                        e.printStackTrace();
                         // Send event on eventbus to signal transfer failure
                         eventBus.send("storyteller.transfer." + transferId + ".done", new JsonObject().put("success", false));
                     }
                 }
             }, 1000);
-            return Optional.of(transferId);
+            return CompletableFuture.completedFuture(Optional.of(transferId));
         }
     }
 
@@ -202,7 +199,6 @@ public class MockStoryTellerService implements IStoryTellerService {
                 }
             } catch (IOException e) {
                 LOGGER.error("Failed to remove pack from mocked device", e);
-                e.printStackTrace();
                 return CompletableFuture.completedFuture(false);
             }
         }
@@ -213,11 +209,11 @@ public class MockStoryTellerService implements IStoryTellerService {
         return CompletableFuture.completedFuture(false);
     }
 
-    public Optional<String> extractPack(String uuid, File destFile) {
+    public CompletableFuture<Optional<String>> extractPack(String uuid, File destFile) {
         // Check that mocked device folder exists
         File deviceFolder = new File(devicePath());
         if (!deviceFolder.exists() || !deviceFolder.isDirectory()) {
-            return Optional.empty();
+            return CompletableFuture.completedFuture(Optional.empty());
         } else {
             String transferId = UUID.randomUUID().toString();
             // Perform transfer asynchronously, and send events on eventbus to monitor progress and end of transfer
@@ -253,7 +249,6 @@ public class MockStoryTellerService implements IStoryTellerService {
                             eventBus.send("storyteller.transfer."+transferId+".done", new JsonObject().put("success", true));
                         } catch (IOException e) {
                             LOGGER.error("Failed to extract pack from mocked device", e);
-                            e.printStackTrace();
                             // Send event on eventbus to signal transfer failure
                             eventBus.send("storyteller.transfer." + transferId + ".done", new JsonObject().put("success", false));
                         }
@@ -263,13 +258,14 @@ public class MockStoryTellerService implements IStoryTellerService {
                     }
                 }
             }, 1000);
-            return Optional.of(transferId);
+            return CompletableFuture.completedFuture(Optional.of(transferId));
         }
     }
 
     private JsonObject getPackMetadata(StoryPackMetadata packMetadata, String path) {
         JsonObject json = new JsonObject()
                 .put("uuid", packMetadata.getUuid())
+                .put("format", packMetadata.getFormat())
                 .put("version", packMetadata.getVersion())
                 .put("path", path);
         Optional.ofNullable(packMetadata.getTitle()).ifPresent(title -> json.put("title", title));

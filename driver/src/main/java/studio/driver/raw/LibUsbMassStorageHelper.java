@@ -4,18 +4,18 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-package studio.driver;
+package studio.driver.raw;
 
 import org.usb4java.*;
-import studio.driver.event.DeviceHotplugEventListener;
+import studio.driver.StoryTellerException;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Arrays;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -161,13 +161,11 @@ import java.util.logging.Logger;
  *      Erase SPI sector:       0xf6 0x15 0x06 + start sector (2 bytes) + end sector (2 bytes) + zero-padding
  *
  */
-public class LibUsbHelper {
+public class LibUsbMassStorageHelper {
 
-    private static final Logger LOGGER = Logger.getLogger(LibUsbHelper.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(LibUsbMassStorageHelper.class.getName());
 
     // USB device
-    public static final short VENDOR_ID = 0x0c45;
-    public static final short PRODUCT_ID = 0x6820;
     private static final short INTERFACE_ID = 0;
     private static final byte ENDPOINT_IN = (byte)0x81;
     private static final byte ENDPOINT_OUT = (byte)0x02;
@@ -193,101 +191,13 @@ public class LibUsbHelper {
 
     public static final short SECTOR_SIZE = 512;
 
-    private static final long POLL_DELAY = 5000L;
-
-    // LibUsb context
-    private static Context context = new Context();
-    // Worker thread to handle libusb async events
-    private static LibUsbAsyncEventsWorker asyncEventHandlerWorker = null;
-    // Scheduled task to actively poll device when hotplug is not supported
-    private static ScheduledExecutorService scheduledExecutor = null;
-    private static Future<?> activePollingTask = null;
     // To generate random packet tags
     private static final SecureRandom prng = new SecureRandom();
 
-    /**
-     * Initialize libusb context, start async event handling worker thread, register hotplug listener, and handle
-     * de-initialization on JVM shutdown.
-     * @param listener A hotplug listener
-     */
-    public static void initializeLibUsb(DeviceHotplugEventListener listener) {
-        // Init libusb
-        LOGGER.info("Initializing libusb...");
-        context = new Context();
-        int result = LibUsb.init(context);
-        if (result != LibUsb.SUCCESS) {
-            throw new StoryTellerException("Unable to initialize libusb.", new LibUsbException(result));
-        }
-
-        // Enable libusb debug logs
-        //LibUsb.setOption(context, LibUsb.OPTION_LOG_LEVEL, LibUsb.LOG_LEVEL_DEBUG);
-
-        // Start worker thread to handle libusb async events
-        asyncEventHandlerWorker = new LibUsbAsyncEventsWorker(context);
-        asyncEventHandlerWorker.start();
-
-        // Hotplug detection
-        if (LibUsb.hasCapability(LibUsb.CAP_HAS_HOTPLUG)) {
-            LOGGER.info("Hotplug is supported. Registering hotplug callback...");
-            LibUsb.hotplugRegisterCallback(
-                    context,
-                    LibUsb.HOTPLUG_EVENT_DEVICE_ARRIVED | LibUsb.HOTPLUG_EVENT_DEVICE_LEFT,
-                    LibUsb.HOTPLUG_ENUMERATE,   // Arm the callback and fire it for all matching currently attached devices
-                    VENDOR_ID,
-                    PRODUCT_ID,
-                    LibUsb.HOTPLUG_MATCH_ANY,   // Device class
-                    (ctx, device, event, userData) -> {
-                        LOGGER.info("Hotplug event callback: " + event);
-                        switch(event) {
-                            case LibUsb.HOTPLUG_EVENT_DEVICE_ARRIVED:
-                                CompletableFuture.runAsync(() -> listener.onDevicePlugged(device));
-                                break;
-                            case LibUsb.HOTPLUG_EVENT_DEVICE_LEFT:
-                                CompletableFuture.runAsync(() -> listener.onDeviceUnplugged(device));
-                                break;
-                        }
-                        return 0;   // Do not deregister the callback
-                    },
-                    null,
-                    null
-            );
-        } else {
-            LOGGER.info("Hotplug is NOT supported. Scheduling task to actively poll USB device...");
-            scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
-            activePollingTask = scheduledExecutor.scheduleAtFixedRate(
-                    new LibUsbActivePollingWorker(context, listener),
-                    0, POLL_DELAY, TimeUnit.MILLISECONDS);
-        }
-
-        // De-initialize libusb context  and stop worker threads when JVM exits
-        Runtime.getRuntime().addShutdownHook(
-                new Thread(() -> {
-                    if (activePollingTask != null && !activePollingTask.isDone()) {
-                        LOGGER.info("Stopping active polling worker task");
-                        activePollingTask.cancel(true);
-                    }
-                    if (scheduledExecutor != null) {
-                        LOGGER.info("Shutting down active polling executor");
-                        scheduledExecutor.shutdown();
-                    }
-                    if (asyncEventHandlerWorker != null) {
-                        LOGGER.info("Stopping async event handling worker thread");
-                        asyncEventHandlerWorker.abort();
-                        try {
-                            asyncEventHandlerWorker.join();
-                        } catch (InterruptedException e) {
-                            LOGGER.log(Level.SEVERE, "Failed to stop async event handling worker thread", e);
-                        }
-                    }
-                    LOGGER.info("Exiting libusb...");
-                    LibUsb.exit(context);
-                })
-        );
-    }
 
     /**
      * Execute the given function on a libusb handle for the given device. Opens and frees the handle and interface.
-     * @param device The device for chiwhich to open a handle
+     * @param device The device for which to open a handle
      * @param func The function to execute on the device handle
      * @param <T> The type returned by the function
      * @return The return value from the function
@@ -527,12 +437,14 @@ public class LibUsbHelper {
     private static boolean checkCommandStatusWrapper(ByteBuffer csw) {
         // Check Command Status Wrapper length
         if (csw.remaining() != MASS_STORAGE_CSW_LENGTH) {
+            LOGGER.severe("Invalid CSW: wrong size ("+csw.remaining()+")");
             return false;
         }
         // Check CSW signature
         byte[] signature = new byte[MASS_STORAGE_CSW_SIGNATURE.length];
         csw.get(signature);
         if (!Arrays.equals(signature, MASS_STORAGE_CSW_SIGNATURE)) {
+            LOGGER.severe("Invalid CSW: wrong signature ("+bytesToHex(signature)+")");
             return false;
         }
         // Check Command Block Tag
@@ -545,10 +457,23 @@ public class LibUsbHelper {
         csw.order(ByteOrder.LITTLE_ENDIAN);
         int residue = csw.getInt(8);
         if (residue > 0) {
+            LOGGER.severe("Invalid CSW: positive residue ("+residue+")");
             return false;
         }
         // Check status
         byte status = csw.get(12);
+        LOGGER.finest("CSW status: "+status);
         return status == 0;
+    }
+
+    private static final byte[] HEX_ARRAY = "0123456789ABCDEF".getBytes();
+    private static String bytesToHex(byte[] bytes) {
+        byte[] hexChars = new byte[bytes.length * 2];
+        for (int j = 0; j < bytes.length; j++) {
+            int v = bytes[j] & 0xFF;
+            hexChars[j * 2] = HEX_ARRAY[v >>> 4];
+            hexChars[j * 2 + 1] = HEX_ARRAY[v & 0x0F];
+        }
+        return new String(hexChars, StandardCharsets.UTF_8);
     }
 }

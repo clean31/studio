@@ -26,7 +26,7 @@ public class BinaryStoryPackReader {
         DataInputStream dis = new DataInputStream(inputStream);
 
         // Pack metadata model
-        StoryPackMetadata metadata = new StoryPackMetadata(Constants.PACK_FORMAT_BINARY);
+        StoryPackMetadata metadata = new StoryPackMetadata(Constants.PACK_FORMAT_RAW);
 
         // Read sector 1
         dis.skipBytes(3);   // Skip to version
@@ -257,7 +257,7 @@ public class BinaryStoryPackReader {
 
         dis.close();
 
-        return new StoryPack(factoryDisabled, version, List.copyOf(stageNodes.values()), enrichedPack);
+        return new StoryPack(stageNodes.get(new SectorAddr(0)).getUuid(), factoryDisabled, version, List.copyOf(stageNodes.values()), enrichedPack, false);
     }
 
     private Optional<String> readString(DataInputStream dis, int maxChars) throws IOException {

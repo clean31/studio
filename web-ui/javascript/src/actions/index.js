@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { toast } from 'react-toastify';
+import {Mutex, withTimeout} from 'async-mutex';
 
 import IssueReportToast from "../components/IssueReportToast";
 import PackDiagramModel from "../components/diagram/models/PackDiagramModel";
@@ -16,6 +17,8 @@ import {generateFilename, sortPacks} from "../utils/packs";
 import {readFromArchive} from "../utils/reader";
 import {simplifiedSample} from "../utils/sample";
 
+
+const mutex = withTimeout(new Mutex(), 100);
 
 export const actionLoadLibrary = (t) => {
     return dispatch => {
@@ -49,162 +52,245 @@ export const setLibrary = (metadata, packs) => ({
 
 
 export const actionCheckDevice = (t) => {
-    return dispatch => {
-        let toastId = toast(t('toasts.device.checking'), { autoClose: false });
-        return fetchDeviceInfos()
-            .then(metadata => {
-                if (metadata && Object.keys(metadata).length > 0 && metadata.plugged) {
-                    toast.update(toastId, { type: toast.TYPE.INFO, render: t('toasts.device.plugged'), autoClose: 5000 });
-                    dispatch(actionDevicePlugged(metadata, t));
-                } else {
-                    // Device not plugged, nothing to do
-                    toast.dismiss(toastId);
-                }
-            })
-            .catch(e => {
-                console.error('failed to fetch device infos', e);
-                toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.checkingFailed')}</>} error={e} />, autoClose: false });
+    return dispatch => mutex.acquire()
+        .then(
+            release => {
+                let toastId = toast(t('toasts.device.checking'), { autoClose: false });
+                return fetchDeviceInfos()
+                    .then(metadata => {
+                        if (metadata && Object.keys(metadata).length > 0 && metadata.plugged) {
+                            toast.update(toastId, { type: toast.TYPE.INFO, render: t('toasts.device.plugged'), autoClose: 5000 });
+                            dispatch(actionDevicePlugged(metadata, t));
+                        } else {
+                            // Device not plugged, nothing to do
+                            toast.dismiss(toastId);
+                        }
+                    })
+                    .catch(e => {
+                        console.error('failed to fetch device infos', e);
+                        toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.checkingFailed')}</>} error={e} />, autoClose: false });
+                    })
+                    .finally(() => {
+                        // Always release the mutex
+                        release();
+                    });
+            },
+            e => {
+                // Device is busy
+                toast.error(t('toasts.device.busy'));
             });
-    }
 };
 
 export const actionDevicePlugged = (metadata, t) => {
-    return dispatch => {
-        dispatch(devicePlugged(metadata));
+    return dispatch => mutex.acquire()
+        .then(
+            release => {
+            dispatch(devicePlugged(metadata));
 
-        console.log("fetching device packs...");
-        let toastId = toast(t('toasts.device.fetching'), { autoClose: false });
-        return fetchDevicePacks()
-            .then(packs => {
-                toast.update(toastId, { type: toast.TYPE.INFO, render: t('toasts.device.fetched', { count: packs.length }), autoClose: 5000 });
-                dispatch(setDevicePacks(packs));
-            })
-            .catch(e => {
-                console.error('failed to fetch device packs', e);
-                toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.fetchingFailed')}</>} error={e} />, autoClose: false });
+            console.log("fetching device packs...");
+            let toastId = toast(t('toasts.device.fetching'), { autoClose: false });
+            return fetchDevicePacks()
+                .then(packs => {
+                    toast.update(toastId, { type: toast.TYPE.INFO, render: t('toasts.device.fetched', { count: packs.length }), autoClose: 5000 });
+                    dispatch(setDevicePacks(packs));
+                })
+                .catch(e => {
+                    console.error('failed to fetch device packs', e);
+                    toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.fetchingFailed')}</>} error={e} />, autoClose: false });
+                })
+                .finally(() => {
+                    // Always release the mutex
+                    release();
+                });
+            },
+            e => {
+                // Device is busy
+                toast.error(t('toasts.device.busy'));
             });
-    }
 };
 
 export const actionRefreshDevice = (t) => {
-    return dispatch => {
-        return fetchDeviceInfos()
-            .then(metadata => {
-                if (metadata && Object.keys(metadata).length > 0 && metadata.plugged) {
-                    return fetchDevicePacks()
-                        .then(packs => {
-                            dispatch(devicePlugged(metadata));
-                            dispatch(setDevicePacks(packs));
-                        });
-                }
-            })
-            .catch(e => {
-                console.error('failed to refresh device', e);
-                toast(<IssueReportToast content={<>{t('toasts.device.refreshingFailed')}</>} error={e} />, { type: toast.TYPE.ERROR, autoClose: false });
+    return dispatch => mutex.acquire()
+        .then(
+            release => {
+                return fetchDeviceInfos()
+                    .then(metadata => {
+                        if (metadata && Object.keys(metadata).length > 0 && metadata.plugged) {
+                            return fetchDevicePacks()
+                                .then(packs => {
+                                    dispatch(devicePlugged(metadata));
+                                    dispatch(setDevicePacks(packs));
+                                });
+                        }
+                    })
+                    .catch(e => {
+                        console.error('failed to refresh device', e);
+                        toast(<IssueReportToast content={<>{t('toasts.device.refreshingFailed')}</>} error={e} />, { type: toast.TYPE.ERROR, autoClose: false });
+                    })
+                    .finally(() => {
+                        // Always release the mutex
+                        release();
+                    });
+            },
+            e => {
+                // Device is busy
+                toast.error(t('toasts.device.busy'));
             });
-    }
 };
 
-export const actionAddFromLibrary = (uuid, path, allowEnriched, context, t) => {
-    return dispatch => {
-        let toastId = toast(t('toasts.device.adding'), { autoClose: false });
-        return addFromLibrary(uuid, path, allowEnriched)
-            .then(resp => {
-                // Monitor transfer progress
-                let transferId = resp.transferId;
-                context.eventBus.registerHandler('storyteller.transfer.'+transferId+'.progress', (error, message) => {
-                    console.log("Received `storyteller.transfer."+transferId+".progress` event from vert.x event bus.");
-                    console.log(message.body);
-                    toast.update(toastId, {progress: message.body.progress, autoClose: false});
-                });
-                context.eventBus.registerHandler('storyteller.transfer.'+transferId+'.done', (error, message) => {
-                    console.log("Received `storyteller.transfer."+transferId+".done` event from vert.x event bus.");
-                    console.log(message.body);
-                    if (message.body.success) {
-                        toast.update(toastId, {progress: null, type: toast.TYPE.SUCCESS, render: t('toasts.device.added'), autoClose: 5000});
-                        // Refresh device metadata and packs list
-                        dispatch(actionRefreshDevice(t));
-                    } else {
-                        toast.update(toastId, {progress: null, type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.addingFailed')}</>} />, autoClose: false });
-                    }
-                });
-            })
-            .catch(e => {
-                console.error('failed to add pack to device', e);
-                toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.addingFailed')}</>} error={e} />, autoClose: false });
+export const actionAddFromLibrary = (uuid, path, format, driver, context, t) => {
+    return dispatch => mutex.acquire()
+        .then(
+            release => {
+                // First, make sure the story pack is in the right format.
+                if (driver !== format) {
+                    console.error('pack format is not compatible with the device');
+                    toast.error(t('toasts.device.notCompatible'));
+                    // Always release the mutex
+                    release();
+                } else {
+                    // Then start transfer
+                    let toastId = toast(t('toasts.device.adding'), { autoClose: false });
+                    return addFromLibrary(uuid, path)
+                        .then(resp => {
+                            // Monitor transfer progress
+                            let transferId = resp.transferId;
+                            context.eventBus.registerHandler('storyteller.transfer.'+transferId+'.progress', (error, message) => {
+                                console.log("Received `storyteller.transfer."+transferId+".progress` event from vert.x event bus.");
+                                console.log(message.body);
+                                if (message.body.progress < 1) {
+                                    toast.update(toastId, {progress: message.body.progress, autoClose: false});
+                                }
+                            });
+                            context.eventBus.registerHandler('storyteller.transfer.'+transferId+'.done', (error, message) => {
+                                console.log("Received `storyteller.transfer."+transferId+".done` event from vert.x event bus.");
+                                console.log(message.body);
+                                if (message.body.success) {
+                                    toast.update(toastId, {progress: null, type: toast.TYPE.SUCCESS, render: t('toasts.device.added'), autoClose: 5000});
+                                    // Refresh device metadata and packs list
+                                    dispatch(actionRefreshDevice(t));
+                                } else {
+                                    toast.update(toastId, {progress: null, type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.addingFailed')}</>} />, autoClose: false });
+                                }
+                                // Always release the mutex
+                                release();
+                            });
+                        })
+                        .catch(e => {
+                            console.error('failed to add pack to device', e);
+                            toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.addingFailed')}</>} error={e} />, autoClose: false });
+                            // Always release the mutex
+                            release();
+                        });
+                }
+            },
+            e => {
+                // Device is busy
+                toast.error(t('toasts.device.busy'));
             });
-    }
 };
 
 export const actionRemoveFromDevice = (uuid, t) => {
-    return dispatch => {
-        let toastId = toast(t('toasts.device.removing'), { autoClose: false });
-        return removeFromDevice(uuid)
-            .then(resp => {
-                if (resp.success) {
-                    toast.update(toastId, {type: toast.TYPE.SUCCESS, render: t('toasts.device.removed'), autoClose: 5000});
-                    // Refresh device metadata and packs list
-                    dispatch(actionRefreshDevice(t));
-                } else {
-                    toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.removingFailed')}</>} />, autoClose: false });
-                }
-            })
-            .catch(e => {
-                console.error('failed to remove pack from device', e);
-                toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.removingFailed')}</>} error={e} />, autoClose: false });
+    return dispatch => mutex.acquire()
+        .then(
+            release => {
+                let toastId = toast(t('toasts.device.removing'), { autoClose: false });
+                return removeFromDevice(uuid)
+                    .then(resp => {
+                        if (resp.success) {
+                            toast.update(toastId, {type: toast.TYPE.SUCCESS, render: t('toasts.device.removed'), autoClose: 5000});
+                            // Refresh device metadata and packs list
+                            dispatch(actionRefreshDevice(t));
+                        } else {
+                            toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.removingFailed')}</>} />, autoClose: false });
+                        }
+                    })
+                    .catch(e => {
+                        console.error('failed to remove pack from device', e);
+                        toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.removingFailed')}</>} error={e} />, autoClose: false });
+                    })
+                    .finally(() => {
+                        // Always release the mutex
+                        release();
+                    });
+            },
+            e => {
+                // Device is busy
+                toast.error(t('toasts.device.busy'));
             });
-    }
 };
 
 export const actionReorderOnDevice = (uuids, t) => {
-    return dispatch => {
-        let toastId = toast(t('toasts.device.reordering'), { autoClose: false });
-        return reorderPacks(uuids)
-            .then(resp => {
-                if (resp.success) {
-                    toast.update(toastId, {type: toast.TYPE.SUCCESS, render: t('toasts.device.reordered'), autoClose: 5000});
-                    // Refresh device metadata and packs list
-                    dispatch(actionRefreshDevice(t));
-                } else {
-                    toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.reorderingFailed')}</>} />, autoClose: false });
-                }
-            })
-            .catch(e => {
-                console.error('failed to reorder packs on device', e);
-                toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.reorderingFailed')}</>} error={e} />, autoClose: false });
+    return dispatch => mutex.acquire()
+        .then(
+            release => {
+                let toastId = toast(t('toasts.device.reordering'), { autoClose: false });
+                return reorderPacks(uuids)
+                    .then(resp => {
+                        if (resp.success) {
+                            toast.update(toastId, {type: toast.TYPE.SUCCESS, render: t('toasts.device.reordered'), autoClose: 5000});
+                            // Refresh device metadata and packs list
+                            dispatch(actionRefreshDevice(t));
+                        } else {
+                            toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.reorderingFailed')}</>} />, autoClose: false });
+                        }
+                    })
+                    .catch(e => {
+                        console.error('failed to reorder packs on device', e);
+                        toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.device.reorderingFailed')}</>} error={e} />, autoClose: false });
+                    })
+                    .finally(() => {
+                        // Always release the mutex
+                        release();
+                    });
+            },
+            e => {
+                // Device is busy
+                toast.error(t('toasts.device.busy'));
             });
-    }
 };
 
-export const actionAddToLibrary = (uuid, context, t) => {
-    return dispatch => {
-        let toastId = toast(t('toasts.library.adding'), { autoClose: false });
-        return addToLibrary(uuid)
-            .then(resp => {
-                // Monitor transfer progress
-                let transferId = resp.transferId;
-                context.eventBus.registerHandler('storyteller.transfer.'+transferId+'.progress', (error, message) => {
-                    console.log("Received `storyteller.transfer."+transferId+".progress` event from vert.x event bus.");
-                    console.log(message.body);
-                    toast.update(toastId, {progress: message.body.progress, autoClose: false});
-                });
-                context.eventBus.registerHandler('storyteller.transfer.'+transferId+'.done', (error, message) => {
-                    console.log("Received `storyteller.transfer."+transferId+".done` event from vert.x event bus.");
-                    console.log(message.body);
-                    if (message.body.success) {
-                        toast.update(toastId, {progress: null, type: toast.TYPE.SUCCESS, render: t('toasts.library.added'), autoClose: 5000});
-                        // Refresh device metadata and packs list
-                        dispatch(actionRefreshLibrary(t));
-                    } else {
-                        toast.update(toastId, {progress: null, type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.library.addingFailed')}</>} />, autoClose: false });
-                    }
-                });
-            })
-            .catch(e => {
-                console.error('failed to add pack to library', e);
-                toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.library.addingFailed')}</>} error={e} />, autoClose: false });
+export const actionAddToLibrary = (uuid, driver, context, t) => {
+    return dispatch => mutex.acquire()
+        .then(
+            release => {
+                let toastId = toast(t('toasts.library.adding'), { autoClose: false });
+                return addToLibrary(uuid, driver)
+                    .then(resp => {
+                        // Monitor transfer progress
+                        let transferId = resp.transferId;
+                        context.eventBus.registerHandler('storyteller.transfer.'+transferId+'.progress', (error, message) => {
+                            console.log("Received `storyteller.transfer."+transferId+".progress` event from vert.x event bus.");
+                            console.log(message.body);
+                            if (message.body.progress < 1) {
+                                toast.update(toastId, {progress: message.body.progress, autoClose: false});
+                            }
+                        });
+                        context.eventBus.registerHandler('storyteller.transfer.'+transferId+'.done', (error, message) => {
+                            console.log("Received `storyteller.transfer."+transferId+".done` event from vert.x event bus.");
+                            console.log(message.body);
+                            if (message.body.success) {
+                                toast.update(toastId, {progress: null, type: toast.TYPE.SUCCESS, render: t('toasts.library.added'), autoClose: 5000});
+                                // Refresh device metadata and packs list
+                                dispatch(actionRefreshLibrary(t));
+                            } else {
+                                toast.update(toastId, {progress: null, type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.library.addingFailed')}</>} />, autoClose: false });
+                            }
+                            // Always release the mutex
+                            release();
+                        });
+                    })
+                    .catch(e => {
+                        console.error('failed to add pack to library', e);
+                        toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.library.addingFailed')}</>} error={e} />, autoClose: false });
+                        // Always release the mutex
+                        release();
+                    });
+            },
+            e => {
+                // Device is busy
+                toast.error(t('toasts.device.busy'));
             });
-    }
 };
 
 export const actionRefreshLibrary = (t) => {
@@ -330,12 +416,13 @@ export const actionUploadToLibrary = (uuid, path, packData, t) => {
     }
 };
 
-export const actionConvertInLibrary = (uuid, path, t) => {
+export const actionConvertInLibrary = (uuid, path, format, allowEnriched, context, t) => {
     return dispatch => {
         let toastId = toast(t('toasts.library.converting'), { autoClose: false });
-        return convertInLibrary(uuid, path)
+        return convertInLibrary(uuid, path, format, allowEnriched)
             .then(resp => {
                 if (resp.success) {
+                    console.log("Story pack converted. Path is: " + resp.path);
                     toast.update(toastId, {
                         progress: null,
                         type: toast.TYPE.SUCCESS,
@@ -344,6 +431,7 @@ export const actionConvertInLibrary = (uuid, path, t) => {
                     });
                     // Refresh device metadata and packs list
                     dispatch(actionRefreshLibrary(t));
+                    return resp.path;
                 } else {
                     toast.update(toastId, { type: toast.TYPE.ERROR, render: <IssueReportToast content={<>{t('toasts.library.convertingFailed')}</>} />, autoClose: false });
                 }

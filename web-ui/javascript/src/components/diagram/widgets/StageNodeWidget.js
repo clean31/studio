@@ -100,9 +100,19 @@ class StageNodeWidget extends React.Component {
         let reader = new FileReader();
         let that = this;
         reader.addEventListener("load", function () {
-            that.props.node.setImage(reader.result);
-            that.props.updateCanvas();
-            that.forceUpdate();
+            let image = new Image();
+            image.onload = function() {
+                // Check image dimensions
+                if(image.width !== 320 || image.height !== 240) {
+                    toast.error(t('toasts.editor.imageAssetWrongDimensions'));
+                    return;
+                }
+                // Update node image
+                that.props.node.setImage(reader.result);
+                that.props.updateCanvas();
+                that.forceUpdate();
+            };
+            image.src = reader.result;
         }, false);
         reader.readAsDataURL(file);
     };
@@ -279,7 +289,7 @@ class StageNodeWidget extends React.Component {
                             <div className="output-port">
                                 {this.props.node.homePort && <>
                                     <span title={t('editor.diagram.stage.transitions.home')} className={'glyphicon glyphicon-home'}/>
-                                    <StudioPortWidget engine={this.props.diagramEngine} model={this.props.node.homePort} className="home-port"/>
+                                    <StudioPortWidget engine={this.props.diagramEngine} model={this.props.node.homePort} className={`home-port ${this.getNodeError('homePort') ? 'error' : ''}`}/>
                                 </>}
                             </div>
                         </div>}

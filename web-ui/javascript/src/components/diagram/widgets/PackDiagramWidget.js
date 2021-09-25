@@ -11,6 +11,7 @@ import {withTranslation} from "react-i18next";
 import { DiagramEngine, NodeModel, LinkModel } from '@projectstorm/react-diagrams';
 import { CanvasWidget } from '@projectstorm/react-canvas-core';
 import {connect} from "react-redux";
+import Switch from "react-switch";
 
 import StageNodeModel from "../models/StageNodeModel";
 import ActionNodeModel from "../models/ActionNodeModel";
@@ -88,6 +89,11 @@ class PackDiagramWidget extends React.Component {
 
     changeDescription = (e) => {
         this.props.diagramEngine.getModel().description = e.target.value;
+        this.forceUpdate();
+    };
+
+    changeNightModeAvailable = (nightModeAvailable) => {
+        this.props.diagramEngine.getModel().nightModeAvailable = nightModeAvailable;
         this.forceUpdate();
     };
 
@@ -246,6 +252,7 @@ class PackDiagramWidget extends React.Component {
         let model = engine.getModel();
 
         let errors = {};
+        let actionNodesCount = 0;
 
         // Verify all nodes
         model.getNodes().forEach(node => {
@@ -272,6 +279,22 @@ class PackDiagramWidget extends React.Component {
                     }
                     errors[node.getID()].assets = t('editor.verify.errors.assets');
                 }
+                // OK and HOME transitions cannot link to the same stage node
+                if ((node.getControls().ok || node.getControls().autoplay) && node.onOk(model)[0] === node) {
+                    console.log('Invalid link on OK port: ' + (node.okPort && node.okPort.getName()));
+                    if (!errors[node.getID()]) {
+                        errors[node.getID()] = {};
+                    }
+                    errors[node.getID()].okPort = t('editor.verify.errors.invalidOkPort');
+                }
+                if (node.getControls().home && node.onHome(model)[0] === node) {
+                    console.log('Invalid link on HOME port: ' + (node.homePort && node.homePort.getName()));
+                    if (!errors[node.getID()]) {
+                        errors[node.getID()] = {};
+                    }
+                    errors[node.getID()].homePort = t('editor.verify.errors.invalidHomePort');
+                }
+
             } else if (node instanceof ActionNodeModel) {
                 let optionsIn = node.optionsIn || [];
                 optionsIn = node.randomOptionIn ? optionsIn.concat([node.randomOptionIn]) : optionsIn;
@@ -291,6 +314,7 @@ class PackDiagramWidget extends React.Component {
                         errors[node.getID()]['optionsOut_'+idx] = t('editor.verify.errors.optionsOut', { index: idx+1 });
                     }
                 });
+                actionNodesCount++;
             } else if (node instanceof  MenuNodeModel) {
                 if (node.fromPort && Object.keys(node.fromPort.getLinks()).length < 1) {
                     console.log('Missing link on FROM port: ' + node.fromPort.getName());
@@ -326,7 +350,11 @@ class PackDiagramWidget extends React.Component {
         if (errorCount > 0) {
             toast.error(t('toasts.editor.verifyDiagramErrors', {count: errorCount}));
         } else {
-            toast.success(t('toasts.editor.verifyDiagramOK'));
+            if (model.nightModeAvailable && actionNodesCount === 0) {
+                toast.error(t('toasts.editor.verifyDiagramNightModeNoActionNodes'));
+            } else {
+                toast.success(t('toasts.editor.verifyDiagramOK'));
+            }
         }
     };
 
@@ -392,9 +420,15 @@ class PackDiagramWidget extends React.Component {
                         <span>{this.props.diagramEngine.getModel() && this.props.diagramEngine.getModel().getEntryPoint() && this.props.diagramEngine.getModel().getEntryPoint().getUuid()}</span>
                     </div>
                 </div>
-                <div className="metadata-section">
-                    <label htmlFor="pack-description">{t('editor.metadata.desc')}</label>
-                    <textarea id="pack-description" value={this.getDiagramModel().description || ''} style={{display: 'inline-block'}} onChange={this.changeDescription} onFocus={this.onInputFocus} onBlur={this.onInputBlur}/>
+                <div className="metadata-section vertical">
+                    <div>
+                        <label htmlFor="pack-description">{t('editor.metadata.desc')}</label>
+                        <textarea id="pack-description" value={this.getDiagramModel().description || ''} style={{display: 'inline-block'}} onChange={this.changeDescription} onFocus={this.onInputFocus} onBlur={this.onInputBlur}/>
+                    </div>
+                    <div title={t('editor.metadata.nightModeWarning')}>
+                        <label htmlFor="pack-night-mode">{t('editor.metadata.nightMode')}</label>
+                        <Switch onChange={this.changeNightModeAvailable} checked={this.getDiagramModel().nightModeAvailable} height={15} width={35} handleDiameter={20} boxShadow="0px 1px 5px rgba(0, 0, 0, 0.6)" activeBoxShadow="0px 0px 1px 10px rgba(0, 0, 0, 0.2)" uncheckedIcon={false} checkedIcon={false} className="metadata-night-mode" />
+                    </div>
                 </div>
                 <div className="metadata-section right">
                     <label htmlFor="pack-thumb">{t('editor.metadata.thumb')}</label>

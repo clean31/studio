@@ -27,12 +27,20 @@
         "link2": "ou ouvrez un pack d'exemple",
         "suffix": " dans l'éditeur."
       },
-      "convertPack": "Convertir ce pack d'histoires au format archive (éditable)",
+      "convertPackToArchive": "Convertir ce pack d'histoires au format archive (éditable)",
+      "convertPackToRaw": "Convertir ce pack d'histoires au format brut (v1.x)",
+      "convertPackToFs": "Convertir ce pack d'histoires au format FS (v2.x)",
       "editPack": "Ouvrir ce pack d'histoires dans l'éditeur",
       "removePack": "Supprimer ce pack d'histoires de la bibliothèque",
       "addPack": "Ajouter un pack d'histoires à la bibliothèque"
     },
-    "official": "Officiel"
+    "official": "Officiel",
+    "format": {
+      "archive": "Archive (éditable)",
+      "raw": "Brut (v1.x)",
+      "fs": "FS (v2.x)"
+    },
+    "nightMode": "Mode nuit disponible"
   },
 
   "editor": {
@@ -48,6 +56,8 @@
       "filename": "Nom de fichier :",
       "uuid": "UUID :",
       "desc": "Description :",
+      "nightMode": "Mode nuit* :",
+      "nightModeWarning": "Le mode nuit joue automatiquement jusqu'à 10 histoires dans le même nœud d'action. Incompatible avec les nœuds simplifiés.",
       "thumb": "Miniature :"
     },
     "tray": {
@@ -118,6 +128,8 @@
       "errors": {
         "fromPort": "Il manque le lien entrant (port FROM).",
         "okPort": "Il manque le lien sortant (port OK).",
+        "invalidOkPort": "Le lien sortant ne doit pas arriver sur le même nœud de scène (port OK).",
+        "invalidHomePort": "Le lien sortant ne doit pas arriver sur le même nœud de scène (port MAISON).",
         "assets": "Image ou son manquant.",
         "optionsIn": "Il manque le lien entrant vers (au moins) une option.",
         "optionsOut": "Il manque le lien sortant pour l'option #{{index}}.",
@@ -167,6 +179,7 @@
         "unplugged": "Fabrique à histoires débranchée.",
         "failure": "Échec d'accès à la fabrique à histoires."
       },
+      "busy": "L'appareil n'est pas disponible. Attendez la fin de toute autre opération liée à l'appareil.",
       "checking": "Vérification de l'appareil...",
       "plugged": "L'appareil est branché.",
       "checkingFailed": "Échec de la vérification de l'appareil.",
@@ -175,6 +188,10 @@
       "fetched_plural": "{{count}} packs récupérés depuis l'appareil.",
       "fetchingFailed": "Échec de la récupération des packs d'histoires de l'appareil.",
       "refreshingFailed": "Échec du rafraîchissement de l'appareil.",
+      "converting": "Conversion du pack pour l'appareil. Cela peut prendre quelques minutes...",
+      "converted": "Pack converti.",
+      "convertingFailed": "Échec de la conversion du pack.",
+      "noConvertingFailed": "Échec de la récupération du pack.",
       "adding": "Ajout du pack à l'appareil...",
       "added": "Pack ajouté à l'appareil.",
       "addingFailed": "Échec de l'ajout du pack à l'appareil.",
@@ -183,7 +200,8 @@
       "removingFailed": "Échec du retrait du pack de l'appareil.",
       "reordering": "Réorganisation des packs de l'appareil...",
       "reordered": "Packs réorganisés sur l'appareil.",
-      "reorderingFailed": "Échec de la réorganisation des packs de l'appareil."
+      "reorderingFailed": "Échec de la réorganisation des packs de l'appareil.",
+      "notCompatible": "Le pack d'histoires n'est pas compatible avec cet appareil."
     },
     "editor": {
       "saving": "Enregistrement du pack d'histoires dans la bibliothèque...",
@@ -198,18 +216,22 @@
       "loadingFailed": "Échec du chargement du pack d'histoires.",
       "thumbWrongType": "La miniature doit être au format PNG.",
       "imageAssetWrongType": "Les formats d'image supportés sont : BMP, JPEG, PNG.",
+      "imageAssetWrongDimensions": "Les dimensions de l'image doivent être 320x240 pixels.",
       "audioAssetWrongType": "Les formats audio supportés sont : WAV, MP3, OGG.",
       "tooManyEntryPoints": "Un pack d'histoires ne peut avoir qu'un seul point d'entrée.",
       "cannotCloneCoverNode": "Le nœud départ ne peut pas être dupliqué.",
       "verifyDiagramErrors": "Le diagramme contient {{count}} nœud en erreur.",
       "verifyDiagramErrors_plural": "Le diagramme contient {{count}} nœuds en erreur.",
-      "verifyDiagramOK": "Le diagramme est valide."
+      "verifyDiagramOK": "Le diagramme est valide.",
+      "verifyDiagramNightModeNoActionNodes": "Le mode nuit est activé mais le diagramme ne contient aucun nœud d'action."
     },
     "viewer": {
       "missingPrev": "Impossible de trouver l'option précédente.",
       "missingNext": "Impossible de trouver l'option suivante.",
       "missingOk": "Impossible de trouver le nœud pour la transition OK.",
-      "missingHome": "Impossible de trouver le nœud pour la transition MAISON."
+      "missingHome": "Impossible de trouver le nœud pour la transition MAISON.",
+      "invalidOk": "La transition OK ne doit pas arriver sur le même nœud de scène.",
+      "invalidHome": "La transition MAISON ne doit pas arriver sur le même nœud de scène."
     },
     "evergreen": {
       "loading": "Chargement de la version actuelle...",
@@ -285,6 +307,10 @@
       "askAllowEnriched": {
         "title": "Activer le format binaire enrichi ?",
         "content": "<p>Le format binaire dit \"enrichi\" <strong>utilise les espaces vides des packs au format binaire pour enregistrer les métadonnées</strong> (titre et description du pack, ainsi que les type, nom et position de chaque nœud).</p><p>Cela permet d'éviter la perte de ces informations (à l'exception la miniature du pack), et le pack peut donc être à nouveau converti au format archive puis ouvert dans l'éditeur avec toutes ces informations intactes (bien que potentiellement tronquées).</p><p>Cependant, cela ne fait pas partie du format original / officiel compris par l'appareil, et les packs d'histoires pourraient ne pas être lus correctement à l'avenir.</p><p><em>Vous pourrez modifier ce comportement dans le panneau Paramètres.</em></p><p>Voulez-vous activer le format binaire enrichi (choisissez Non si vous préférez utiliser le format original / officiel pour une compatibilité maximale)?</p>"
+      },
+      "askConfirmConversion": {
+        "title": "Convertir le pack d'histoires ?",
+        "content": "<p>L'instance de ce pack d'histoires compatible avec l'appareil n'est pas à jour. Convertir la dernière instance ?</p><p>(Le pack converti sera conservé dans la bibliothèque locale)</p>"
       }
     },
     "settings": {
